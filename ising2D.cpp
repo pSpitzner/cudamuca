@@ -21,14 +21,12 @@ typedef r123::Philox4x32_R<7> RNG;
 using namespace std;
 
 // calculate bin index from energy E
-inline unsigned EBIN(int E)
-{
+inline unsigned EBIN(int E) {
   return (E + (N << 1)) >> 2;
 }
 
 // calculate energy difference of one spin flip
-int localE(unsigned idx, vector<int>& lattice)
-{
+int localE(unsigned idx, vector<int> &lattice) {
   int right = idx + 1;
   int left = static_cast<int>(idx) - 1;
   int up = idx + L;
@@ -40,16 +38,15 @@ int localE(unsigned idx, vector<int>& lattice)
   if (up > static_cast<int>(N) - 1 ) up -= N;
   if (down < 0 ) down += N;
 
-   return -lattice.at(idx) *
-     ( lattice.at(right) +
-       lattice.at(left) +
-       lattice.at(up) +
-       lattice.at(down) );
+  return -lattice.at(idx) *
+         ( lattice.at(right) +
+           lattice.at(left) +
+           lattice.at(up) +
+           lattice.at(down) );
 }
 
 // calculate total energy
-int calculateEnergy(vector<int>& lattice)
-{
+int calculateEnergy(vector<int> &lattice) {
   int sum = 0;
 
   for (size_t i = 0; i < N; i++) {
@@ -61,8 +58,7 @@ int calculateEnergy(vector<int>& lattice)
 }
 
 // multicanonical Markov chain update (single spin flip)
-void mucaUpdate(float rannum, int& energy, vector<int>& lattice, vector<float>& h_log_weights, unsigned idx)
-{
+void mucaUpdate(float rannum, int &energy, vector<int> &lattice, vector<float> &h_log_weights, unsigned idx) {
   // precalculate energy change
   int dE = -2 * localE(idx, lattice);
 
@@ -74,8 +70,7 @@ void mucaUpdate(float rannum, int& energy, vector<int>& lattice, vector<float>& 
 }
 
 // multicanonical iteration including initial thermalization
-void mucaIteration(vector<int>& h_lattice, vector<my_uint64>& h_histograms, vector<float>& h_log_weights, int& energy, unsigned worker, unsigned iteration, unsigned seed, my_uint64 NUPDATES_THERM, my_uint64 NUPDATES)
-{
+void mucaIteration(vector<int> &h_lattice, vector<my_uint64> &h_histograms, vector<float> &h_log_weights, int &energy, unsigned worker, unsigned iteration, unsigned seed, my_uint64 NUPDATES_THERM, my_uint64 NUPDATES) {
   // initialize two RNGs
   // one for acceptance propability (k1)
   // and one for selection of a spin (same for all workers) (k2)
@@ -113,8 +108,7 @@ void mucaIteration(vector<int>& h_lattice, vector<my_uint64>& h_histograms, vect
   }
 }
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char *argv[]) {
   // read command line arguments and initialize constants (see ising2D_io.hpp)
   parseArgs(argc, argv);
 
@@ -124,10 +118,11 @@ int main(int argc, char* argv[])
   NUM_WORKERS = static_cast<unsigned>(MPI::COMM_WORLD.Get_size());
 
   // initialize local (LxL) lattice
+  init_mt(seed);
   RNG rng;
   RNG::key_type k = {{WORKER, 0xdecafbad}};
   RNG::ctr_type c = {{0, seed, 0xBADCAB1E, 0xBADC0DED}};
-  RNG::ctr_type r; 
+  RNG::ctr_type r;
   vector<int> h_lattice(N);
   for (size_t i = 0; i < h_lattice.size(); i++) {
     if(i%4 == 0) {
@@ -152,7 +147,8 @@ int main(int argc, char* argv[])
   timespec start, stop;
   ofstream iterfile;
   if (WORKER == 0) {
-    iterfile.open("iterations.dat");
+    printf("writing to %s\n", outputPath.c_str());
+    iterfile.open(outputPath+"iterations.dat");
   }
 
   // initial estimate of width at infinite temperature
@@ -166,7 +162,7 @@ int main(int argc, char* argv[])
   for (size_t k = 0; k < MAX_ITER; k++) {
     // start timer
     MPI::COMM_WORLD.Barrier();
-  	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
     // distribute weight of rank0 to all
     MPI::COMM_WORLD.Bcast(h_log_weights.data(), h_log_weights.size(), MPI::FLOAT, 0);
     // acceptance rate and correlation time corrected "random walk"
@@ -175,8 +171,7 @@ int main(int argc, char* argv[])
     if(width<N) {
       // 6 is motivated by the average acceptance rate of a multicanonical simulation ~0.45 -> (1/0.45)**z~6
       nupdates_run = 6*pow(width,z)/NUM_WORKERS;
-    }
-    else {
+    } else {
       // for a flat spanning histogram, we assume roughly equally distributed
       // walkers and reduce the thermalization time
       // heuristic modification factor;
@@ -189,7 +184,7 @@ int main(int argc, char* argv[])
     // merge histograms to rank0
     MPI::COMM_WORLD.Reduce(h_histograms.data(), mpi_hist.data(), h_histograms.size(), MPI::UNSIGNED_LONG_LONG, MPI::SUM, 0);
     // stop timer
-   	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
     long double elapsed = 1e9* (stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec);
     times.push_back(elapsed);
     TOTAL_THERM  +=NUPDATES_THERM;
@@ -203,7 +198,8 @@ int main(int argc, char* argv[])
       double dk  = d_kullback(mpi_hist);
       if (dk<1e-4) { converged = 1;}
       iterfile << "#NITER = " << k  << " width= " << width << "; nupdates= " << nupdates_run <<" dk= " << dk << endl;
-      writeHistograms(h_log_weights, mpi_hist, iterfile);
+      std::cout << "#NITER = " << k  << " width= " << width << "; nupdates= " << nupdates_run <<" dk= " << dk << endl;
+      // writeHistograms(h_log_weights, mpi_hist, iterfile);
       // measure width of the current histogram
       size_t start,end;
       getHistogramRange(mpi_hist, start, end);
@@ -242,25 +238,75 @@ int main(int argc, char* argv[])
     // thermalization
     NUPDATES_THERM = pow(N,z);
     mucaIteration(h_lattice, h_histograms, h_log_weights, energy, WORKER, 0, seed+1000, NUPDATES_THERM, 0);
-    size_t JACKS = 100;
-    NUPDATES = NUPDATES_PRODUCTION/JACKS;
+
+    // size_t sweepsize = pow(N,z);
+    size_t sweepsize = pow(N,1);
+
+    // accumulated histogram for our observables
+    std::vector< std::vector<double> > h_obs(h_histograms.size(), std::vector<double> (9, 0.));
+
+    for (size_t i = 0; i < h_obs.size(); i++) {
+      h_obs[i][0] = 4 * static_cast<int>(i) - 2 * static_cast<int>(N);
+    }
+
     // start timer
     MPI::COMM_WORLD.Barrier();
-  	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-    // loop over Jackknife bins
-    for (size_t k = 0; k < JACKS; k++) {
-      // local iterations on each task, writing to local histograms
-      mucaIteration(h_lattice, h_histograms, h_log_weights, energy, WORKER, k, seed+2000, 0, NUPDATES);
-      // merge histograms to rank0
-      MPI::COMM_WORLD.Reduce(h_histograms.data(), mpi_hist.data(), h_histograms.size(), MPI::UNSIGNED_LONG_LONG, MPI::SUM, 0);
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
 
-      if (WORKER == 0) {
-        std::stringstream filename;
-        filename << "production" << std::setw(3) << std::setfill('0') << k << ".dat";
-        iterfile.open(filename.str().c_str());
-        writeHistograms(h_log_weights, mpi_hist, iterfile);
-        iterfile.close();
+    ofstream ts;
+    std::stringstream filename;
+    filename << outputPath << "ts" << std::setw(4) << std::setfill('0') << WORKER << ".dat";
+    ts.open(filename.str().c_str());
+    ts << "#L=" << L << "\n#N=" << N << std::endl;
+    ts << "#histigram entry every " << sweepsize << " attempted flips\n";
+    ts << "#\n#1_E\t2_H(E)\t\t3_Mfull\t4_Mb2\t5_Mb4\t6_Mb6\t7_Mb8\n";
+
+    for (size_t s = 0; s < NUPDATES_PRODUCTION; s++) {
+      mucaIteration(h_lattice, h_histograms, h_log_weights, energy, WORKER, s, seed+2000, 0, sweepsize);
+
+      int E = calculateEnergy(h_lattice);
+      size_t bin = EBIN(E);
+      h_obs[bin][1] += 1;
+      h_obs[bin][2] += std::fabs(getMagnetization(h_lattice, 1, 1));
+      h_obs[bin][3] += std::fabs(getMagnetization(h_lattice, 2, 4));
+      h_obs[bin][4] += std::fabs(getMagnetization(h_lattice, 4, 4));
+      h_obs[bin][5] += std::fabs(getMagnetization(h_lattice, 6, 4));
+      h_obs[bin][6] += std::fabs(getMagnetization(h_lattice, 8, 4));
+
+      h_obs[bin][7] += std::fabs(getMagnetization(h_lattice, 2, 2));
+      h_obs[bin][8] += std::fabs(getMagnetization(h_lattice, 8, 8));
+
+      // time series
+      // ts << std::setw(1) << calculateEnergy(h_lattice) << std::setw(6);
+      // ts << "\t" << getMagnetization(h_lattice, 1, 1);
+      // ts << "\t" << getMagnetization(h_lattice, 2);
+      // ts << "\t" << getMagnetization(h_lattice, 4);
+      // ts << "\t" << getMagnetization(h_lattice, 6);
+      // ts << "\t" << getMagnetization(h_lattice, 8);
+      // ts << std::endl;
+
+      // more efficient histograms
+
+    }
+
+    for (size_t i = 0; i < h_obs.size(); i++) {
+      for (size_t j = 0; j < h_obs[i].size(); j++) {
+        ts << h_obs[i][j] << "\t";
       }
+      ts << std::endl;
+    }
+
+    ts.close();
+
+    // merge histograms to rank0
+    MPI::COMM_WORLD.Reduce(h_histograms.data(), mpi_hist.data(), h_histograms.size(), MPI::UNSIGNED_LONG_LONG, MPI::SUM, 0);
+
+    if (WORKER == 0) {
+      std::stringstream filename;
+      filename << outputPath << "production" << std::setw(3) << std::setfill('0') << WORKER << ".dat";
+      iterfile.open(filename.str().c_str());
+      writeHistograms(h_log_weights, mpi_hist, iterfile);
+      iterfile.close();
     }
     // stop timer
     MPI::COMM_WORLD.Barrier();
@@ -268,15 +314,16 @@ int main(int argc, char* argv[])
     if (WORKER==0) {
       std::cout << "production run updates  JACK: " << NUPDATES     << "*WORKER \n";
       std::cout << "production run updates total: " << NUPDATES*100 << "*WORKER \n";
-      std::cout << "production run time total   : " << (stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)*1e-9 << "s\n"; 
+      std::cout << "production run time total   : " << (stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)*1e-9 << "s\n";
       ofstream sout;
       sout.open("stats.dat", std::fstream::out | std::fstream::app);
       sout << "production run updates  JACK: " << NUPDATES     << "*WORKER \n";
       sout << "production run updates total: " << NUPDATES*100 << "*WORKER \n";
-      sout << "production run time total   : " << (stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)*1e-9 << "s\n"; 
+      sout << "production run time total   : " << (stop.tv_sec - start.tv_sec) + (stop.tv_nsec - start.tv_nsec)*1e-9 << "s\n";
       sout.close();
     }
   }
+
   MPI::Finalize();
 
   return 0;

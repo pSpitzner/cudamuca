@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <cmath>
+#include <random>
 
 // POSIX standard (required for parsing command line arguments, may not be available on Windows)
 #include <getopt.h>
@@ -20,6 +21,7 @@ unsigned NUM_WORKERS;
 int REQUESTED_GPU;
 bool modify;
 bool production;
+std::string outputPath;
 
 // system parameters: determined by program
 my_uint64 NUPDATES_THERM;
@@ -31,26 +33,85 @@ unsigned N;
 
 // system parameters: copy for GPU
 #ifdef __CUDACC__
-__constant__ unsigned d_L;
-__constant__ unsigned d_N;
-__constant__ unsigned d_NUM_WORKERS;
+  __constant__ unsigned d_L;
+  __constant__ unsigned d_N;
+  __constant__ unsigned d_NUM_WORKERS;
 #endif
 
 // print log-weights and histogram to filestream
-void writeHistograms(const std::vector<float>& weights, const std::vector<my_uint64>& histogram, std::ofstream& fout)
-{
+void writeHistograms(const std::vector<float> &weights, const std::vector<my_uint64> &histogram, std::ofstream &fout) {
   for (size_t i = 0; i < histogram.size(); i++) {
     // do not write unoccupied energy bins
-    if (i == 1 || i == histogram.size() - 2) {
-      continue;
-    }
+    // if (i == 1 || i == histogram.size() - 2) {
+    //   continue;
+    // }
     fout << 4 * static_cast<int>(i) - 2 * static_cast<int>(N) << " " << std::setprecision(10) << weights.at(i) << " " << histogram.at(i) << std::endl;
   }
 }
 
+
+// rng and distribution for dirty magnetization measurement. philox is overkill here.
+std::mt19937 mt(316);
+std::uniform_real_distribution<> udis(0, 1);
+void init_mt(int seed) {
+  mt.seed(1000+seed);
+  mt.discard(70000);
+}
+
+
+inline int pbc_pos(int xn, int yn) {
+  int x = xn-std::floor(xn/L)*L;
+  int y = yn-std::floor(yn/L)*L;
+  // printf("%d %d\t", x, y);
+  return x + y*L;
+}
+
+
+// magnetization of block with pbc and size b, located at top-left-spin x, y
+template <typename intT>
+inline int getBlockMag(std::vector<intT> &h_lattice, int tlx, int tly, int b = 4) {
+  int mag = 0;
+  size_t ymax = tly+b;
+  size_t xmax = tlx+b;
+  for (size_t y = tly; y < ymax; y++) {
+    for (size_t x = tlx; x < xmax; x++) {
+      int idx = pbc_pos(x,y);
+      // printf("s_%d (%d)\n", idx, h_lattice.at(idx));
+      mag += h_lattice.at(idx);
+    }
+  }
+  // printf("mtemp: %d\n", mag);
+
+  if (mag == 0) {
+    if (udis(mt) > 0.5) return 1;
+    else return -1;
+  }
+  if (mag > 0) return 1;
+  return -1;
+}
+
+// magnetization with overlapping blockspin trafo. blocks of b=4 spins per dim. block shift (increment) db=4 -> no overlap
+template <typename intT>
+int getMagnetization(std::vector<intT> &h_lattice, int db = 4, int b = 4) {
+  int nb = 0;
+  int mag = 0;
+  for (size_t by = 0; by < L; by+=db) {
+    for (size_t bx = 0; bx < L; bx+=db) {
+      nb += 1;
+      // printf("block: %d %d\n", by, bx);
+      int temp = getBlockMag(h_lattice, bx, by, b);
+      mag += temp;
+      // printf("mag: %d\n-----\n", temp);
+    }
+  }
+
+  // return double(mag)/nb;
+  return mag;
+  // printf("\n\n%d %d %f\n", nb, (L/db)*(L/db), double(mag)/nb);
+}
+
 // print statistics to filestream
-void writeStatistics(const std::vector<long double>& times, std::ofstream& fout)
-{
+void writeStatistics(const std::vector<long double> &times, std::ofstream &fout) {
   int iter = times.size();
 
   double total = 0.0;
@@ -77,68 +138,70 @@ void writeStatistics(const std::vector<long double>& times, std::ofstream& fout)
 }
 
 // print command-line help
-void print_usage(char* progName)
-{
+void print_usage(char *progName) {
   std::cout << "Usage :" << std::endl;
-#ifndef __CUDACC__
+  #ifndef __CUDACC__
   std::cout << progName << " [mt] [-s seed] [-p nupdates] -L size" << std::endl;
-#endif
-#ifdef __CUDACC__
+  #endif
+  #ifdef __CUDACC__
   std::cout << progName << " [mt] [-s seed] [-p nupdates] [-i dev] -L size -W workers" << std::endl;
-#endif
+  #endif
   std::cout << "-m turns on modifyWeights, default: false" << std::endl;
   std::cout << "-p final production run (set number of updates, if selected), default: 0" << std::endl;
   std::cout << "-L sets the system size, required parameter" << std::endl;
   std::cout << "-s sets the initial seed, default: 1000" << std::endl;
-#ifdef __CUDACC__
+  std::cout << "-o sets the output directory default: /dev/null" << std::endl;
+  #ifdef __CUDACC__
   std::cout << "-i select device from list of available GPUs, optional parameter, default: automatic" << std::endl;
   std::cout << "-W sets the number of workers, required parameter" << std::endl;
-#endif
+  #endif
 }
 
 // argument parser for command line
-void parseArgs(int ac, char** av)
-{
+void parseArgs(int ac, char **av) {
   int option = 0;
   L = 0;
   N = 0;
   seed = 1000;
   modify = false;
   production = false;
-#ifdef __CUDACC__
+  outputPath = "/dev/null/";
+  #ifdef __CUDACC__
   NUM_WORKERS = 0;
   REQUESTED_GPU = -1;
-#endif
+  #endif
   NUPDATES_PRODUCTION = 0;
 
-#ifdef __CUDACC__
-  while ((option = getopt(ac, av, "mp:s:L:W:i:")) != -1) {
-#else
-  while ((option = getopt(ac, av, "mp:s:L:")) != -1) {
-#endif
+  #ifdef __CUDACC__
+  while ((option = getopt(ac, av, "mp:s:L:W:i:o:")) != -1) {
+  #else
+  while ((option = getopt(ac, av, "mp:s:L:o:")) != -1) {
+  #endif
     switch(option) {
       case 'm' : modify = true;
-                 break;
+        break;
       case 'p' : production = true;
-                 NUPDATES_PRODUCTION=strtoll(optarg,NULL,10);
-                 break;
+        NUPDATES_PRODUCTION=strtoll(optarg,NULL,10);
+        break;
       case 's' : seed = atoi(optarg);
-                 break;
+        break;
       case 'L' : L = atoi(optarg);
-                 break;
-#ifdef __CUDACC__
+        break;
+      case 'o' : outputPath = std::string(optarg);
+        break;
+        #ifdef __CUDACC__
       case 'W': NUM_WORKERS = atoi(optarg);
-                break;
+        break;
       case 'i': REQUESTED_GPU = atoi(optarg);
-                break;
-#endif
+        break;
+        #endif
       default: print_usage(av[0]);
-               exit(-1);
+        exit(-1);
     }
   }
   N = L * L;
   if (L == 0 || N == 0) {
-      print_usage(av[0]);
-      exit(-1);
+    print_usage(av[0]);
+    exit(-1);
   }
 }
