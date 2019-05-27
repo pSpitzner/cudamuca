@@ -223,7 +223,7 @@ int main(int argc, char *argv[]) {
     iterfile.close();
 
     ofstream sout;
-    sout.open("stats.dat");
+    sout.open(outputPath+"stats.dat");
     writeStatistics(times, sout);
     sout << "total number of thermalization steps/Worker : " << TOTAL_THERM << "\n";
     sout << "total number of iteration updates   /Worker : " << TOTAL_UPDATES << "\n";
