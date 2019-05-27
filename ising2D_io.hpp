@@ -190,9 +190,9 @@ void parseArgs(int ac, char **av) {
   NUPDATES_PRODUCTION = 0;
 
   #ifdef __CUDACC__
-  while ((option = getopt(ac, av, "mp:s:L:W:i:o:")) != -1) {
+  while ((option = getopt(ac, av, "mp:s:L:W:i:o:d:b:")) != -1) {
   #else
-  while ((option = getopt(ac, av, "mp:s:L:o:")) != -1) {
+  while ((option = getopt(ac, av, "mp:s:L:o:d:b:")) != -1) {
   #endif
     switch(option) {
       case 'm' : modify = true;
