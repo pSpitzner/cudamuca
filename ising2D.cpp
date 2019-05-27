@@ -243,7 +243,7 @@ int main(int argc, char *argv[]) {
     size_t sweepsize = pow(N,1);
 
     // accumulated histogram for our observables
-    std::vector< std::vector<double> > h_obs(h_histograms.size(), std::vector<double> (9, 0.));
+    std::vector< std::vector<double> > h_obs(h_histograms.size(), std::vector<double> (5, 0.));
 
     for (size_t i = 0; i < h_obs.size(); i++) {
       h_obs[i][0] = 4 * static_cast<int>(i) - 2 * static_cast<int>(N);
@@ -259,22 +259,25 @@ int main(int argc, char *argv[]) {
     ts.open(filename.str().c_str());
     ts << "#L=" << L << "\n#N=" << N << std::endl;
     ts << "#histigram entry every " << sweepsize << " attempted flips\n";
-    ts << "#\n#1_E\t2_H(E)\t\t3_Mfull\t4_Mb2\t5_Mb4\t6_Mb6\t7_Mb8\n";
+    ts << "#db=" << cs_db << "\tb=" << cs_b << std::endl;
+    ts << "#\n#1_E\t2_H(E)\t\t3_Mfull\tMmajor\tMdecim\n";
 
     for (size_t s = 0; s < NUPDATES_PRODUCTION; s++) {
       mucaIteration(h_lattice, h_histograms, h_log_weights, energy, WORKER, s, seed+2000, 0, sweepsize);
 
       int E = calculateEnergy(h_lattice);
+      int Mm = 0;
+      int Md = 0;
       size_t bin = EBIN(E);
+
+      Mm = std::fabs(getMagnetization(h_lattice, cs_db, cs_b, Md));
+      Md = std::fabs(Md);
+
       h_obs[bin][1] += 1;
       h_obs[bin][2] += std::fabs(getMagnetization(h_lattice, 1, 1));
-      h_obs[bin][3] += std::fabs(getMagnetization(h_lattice, 2, 4));
-      h_obs[bin][4] += std::fabs(getMagnetization(h_lattice, 4, 4));
-      h_obs[bin][5] += std::fabs(getMagnetization(h_lattice, 6, 4));
-      h_obs[bin][6] += std::fabs(getMagnetization(h_lattice, 8, 4));
 
-      h_obs[bin][7] += std::fabs(getMagnetization(h_lattice, 2, 2));
-      h_obs[bin][8] += std::fabs(getMagnetization(h_lattice, 8, 8));
+      h_obs[bin][3] += Mm;
+      h_obs[bin][4] += Md;
 
       // time series
       // ts << std::setw(1) << calculateEnergy(h_lattice) << std::setw(6);

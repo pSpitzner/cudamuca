@@ -22,6 +22,8 @@ int REQUESTED_GPU;
 bool modify;
 bool production;
 std::string outputPath;
+int cs_b;
+int cs_db;
 
 // system parameters: determined by program
 my_uint64 NUPDATES_THERM;
@@ -90,17 +92,24 @@ inline int getBlockMag(std::vector<intT> &h_lattice, int tlx, int tly, int b = 4
   return -1;
 }
 
-// magnetization with overlapping blockspin trafo. blocks of b=4 spins per dim. block shift (increment) db=4 -> no overlap
+
+
+// magnetization with overlapping blockspin trafo. using majority rule
+// blocks of b=4 spins per dim. block shift (increment) db=4 -> no overlap
+// decimrule gives magn. from block value using single spin
 template <typename intT>
-int getMagnetization(std::vector<intT> &h_lattice, int db = 4, int b = 4) {
+int getMagnetization(std::vector<intT> &h_lattice, int db, int b, int &decim_rule) {
+
   int nb = 0;
   int mag = 0;
+  decim_rule = 0;
   for (size_t by = 0; by < L; by+=db) {
     for (size_t bx = 0; bx < L; bx+=db) {
       nb += 1;
       // printf("block: %d %d\n", by, bx);
       int temp = getBlockMag(h_lattice, bx, by, b);
       mag += temp;
+      decim_rule += h_lattice.at(pbc_pos(bx, by));
       // printf("mag: %d\n-----\n", temp);
     }
   }
@@ -108,6 +117,12 @@ int getMagnetization(std::vector<intT> &h_lattice, int db = 4, int b = 4) {
   // return double(mag)/nb;
   return mag;
   // printf("\n\n%d %d %f\n", nb, (L/db)*(L/db), double(mag)/nb);
+}
+
+template <typename intT>
+int getMagnetization(std::vector<intT> &h_lattice, int db = 4, int b = 4) {
+  int decim_rule;
+  return getMagnetization(h_lattice, db, b, decim_rule);
 }
 
 // print statistics to filestream
@@ -166,6 +181,8 @@ void parseArgs(int ac, char **av) {
   modify = false;
   production = false;
   outputPath = "/dev/null/";
+  cs_db = 4;
+  cs_b  = 4;
   #ifdef __CUDACC__
   NUM_WORKERS = 0;
   REQUESTED_GPU = -1;
@@ -188,6 +205,10 @@ void parseArgs(int ac, char **av) {
       case 'L' : L = atoi(optarg);
         break;
       case 'o' : outputPath = std::string(optarg);
+        break;
+      case 'd' : cs_db = atoi(optarg);
+        break;
+      case 'b' : cs_b = atoi(optarg);
         break;
         #ifdef __CUDACC__
       case 'W': NUM_WORKERS = atoi(optarg);
