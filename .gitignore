@@ -3,7 +3,6 @@ output
 .DS_Store
 dat
 exe
-parameters.tsv
 exe/*
 *.hdf5
 *.pyc

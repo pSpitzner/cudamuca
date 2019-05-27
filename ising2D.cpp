@@ -8,12 +8,12 @@
 #include <limits>
 #include <sys/time.h>
 #include <mpi.h>
-#include "Random123/philox.h"
-#include "Random123/examples/uniform.hpp"
+// #include "Random123/philox.h"
+// #include "Random123/examples/uniform.hpp"
 #include "muca.hpp"
 
 // choose random number generator
-typedef r123::Philox4x32_R<7> RNG;
+// typedef r123::Philox4x32_R<7> RNG;
 
 // This includes my_uint64 type
 #include "ising2D_io.hpp"
@@ -74,11 +74,11 @@ void mucaIteration(vector<int> &h_lattice, vector<my_uint64> &h_histograms, vect
   // initialize two RNGs
   // one for acceptance propability (k1)
   // and one for selection of a spin (same for all workers) (k2)
-  RNG rng;
-  RNG::key_type k1 = {{worker, 0xdecafbad}};
-  RNG::key_type k2 = {{0xC001CAFE, 0xdecafbad}};
-  RNG::ctr_type c = {{0, seed, iteration, 0xBADC0DED}};//0xBADCAB1E
-  RNG::ctr_type r1, r2;
+  // RNG rng;
+  // RNG::key_type k1 = {{worker, 0xdecafbad}};
+  // RNG::key_type k2 = {{0xC001CAFE, 0xdecafbad}};
+  // RNG::ctr_type c = {{0, seed, iteration, 0xBADC0DED}};//0xBADCAB1E
+  // RNG::ctr_type r1, r2;
 
   // reset local histogram
   for (size_t i = 0; i < h_histograms.size(); i++) {
@@ -87,22 +87,22 @@ void mucaIteration(vector<int> &h_lattice, vector<my_uint64> &h_histograms, vect
 
   // thermalization
   for (my_uint64 i = 0; i < NUPDATES_THERM; i++) {
-    if(i%4 == 0) {
-      ++c[0];
-      r1 = rng(c, k1); r2 = rng(c, k2);
-    }
-    unsigned idx = static_cast<unsigned>(r123::u01fixedpt<float>(r2.v[i%4]) * N);
-    mucaUpdate(r123::u01fixedpt<float>(r1.v[i%4]), energy, h_lattice, h_log_weights, idx);
+    // if(i%4 == 0) {
+    //   ++c[0];
+    //   r1 = rng(c, k1); r2 = rng(c, k2);
+    // }
+    unsigned idx = static_cast<unsigned>(udis(mt) * N);
+    mucaUpdate(udis(mt), energy, h_lattice, h_log_weights, idx);
   }
 
   // estimate current probability distribution of W(E)
   for (my_uint64 i = 0; i < NUPDATES; i++) {
-    if(i%4 == 0) {
-      ++c[0];
-      r1 = rng(c, k1); r2 = rng(c, k2);
-    }
-    unsigned idx = static_cast<unsigned>(r123::u01fixedpt<float>(r2.v[i%4]) * N);
-    mucaUpdate(r123::u01fixedpt<float>(r1.v[i%4]), energy, h_lattice, h_log_weights, idx);
+    // if(i%4 == 0) {
+    //   ++c[0];
+    //   r1 = rng(c, k1); r2 = rng(c, k2);
+    // }
+    unsigned idx = static_cast<unsigned>(udis(mt) * N);
+    mucaUpdate(udis(mt), energy, h_lattice, h_log_weights, idx);
     // add to local histogram
     h_histograms.at(EBIN(energy)) += 1;
   }
@@ -118,18 +118,18 @@ int main(int argc, char *argv[]) {
   NUM_WORKERS = static_cast<unsigned>(MPI::COMM_WORLD.Get_size());
 
   // initialize local (LxL) lattice
-  init_mt(seed);
-  RNG rng;
-  RNG::key_type k = {{WORKER, 0xdecafbad}};
-  RNG::ctr_type c = {{0, seed, 0xBADCAB1E, 0xBADC0DED}};
-  RNG::ctr_type r;
+  init_mt(seed+WORKER);
+  // RNG rng;
+  // RNG::key_type k = {{WORKER, 0xdecafbad}};
+  // RNG::ctr_type c = {{0, seed, 0xBADCAB1E, 0xBADC0DED}};
+  // RNG::ctr_type r;
   vector<int> h_lattice(N);
   for (size_t i = 0; i < h_lattice.size(); i++) {
-    if(i%4 == 0) {
-      ++c[0];
-      r = rng(c, k);
-    }
-    h_lattice.at(i) = 2*(r123::u01fixedpt<float>(r.v[i%4]) < 0.5)-1;
+    // if(i%4 == 0) {
+    //   ++c[0];
+    //   r = rng(c, k);
+    // }
+    h_lattice.at(i) = 2*(udis(mt) < 0.5)-1;
   }
 
   // initialize local energy

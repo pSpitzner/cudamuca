@@ -2,7 +2,7 @@
 
 # please select your mpi compiler
 MPICC=mpicxx
-CPU_FLAGS=-pedantic -Wall -Wextra -O3 -std=c++14 -I ./Random123/include/
+CPU_FLAGS=-pedantic -Wall -Wextra -O3 -std=c++14
 
 # please set this to your cuda path
 ifeq ($(wildcard /opt/cuda/bin/nvcc),)
